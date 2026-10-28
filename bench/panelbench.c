@@ -11,7 +11,7 @@
 
 static uint64_t instr(void) { struct rusage_info_v6 r; proc_pid_rusage(getpid(), RUSAGE_INFO_V6, (rusage_info_t *)&r); return r.ri_instructions; }
 
-static void build(plist_t *l, int t) {
+static void build_old(plist_t *l, int t) {
     char a[48], b[48];
     pl_reset(l);
     snprintf(a, sizeof a, "%d%%", 10 + t % 50);
@@ -45,6 +45,8 @@ static void build(plist_t *l, int t) {
     for (int i = 0; i < 120; i++) m->v[0][i] = 0.62f;
     snprintf(b, sizeof b, "%.1f GB of 51.5 GB", 30.1 + 0.1 * ((t / 2) % 4)); pl_row(l, "Used", b); pl_row(l, "App", "18.2 GB"); pl_row(l, "Wired", "4.1 GB");
     pl_row(l, "Compressed", "1.2 GB"); pl_row(l, "Cached", "9.3 GB"); pl_row(l, "Swap", "0 B"); pl_row(l, "Pressure", "Normal");
+    pl_gap(l, 4);
+    for (int i = 0; i < 5; i++) { snprintf(b, sizeof b, "%d MB", 900 - i * 60 + (t / 2) % 3); pl_small(l, names[i], b); }
     pl_divider(l);
     pl_header(l, "Disk", "66%");
     pl_bar(l, 0.66f, PC_TEAL);
@@ -52,6 +54,71 @@ static void build(plist_t *l, int t) {
     pl_caption(l, "Right-click the menu bar item for settings");
 }
 
+// The compact layout the app builds now: detail lines, process rows with share
+// bars, a segmented memory bar with legends.
+static void build_new(plist_t *l, int t) {
+    char a[64], b[48];
+    pl_reset(l);
+    snprintf(a, sizeof a, "%d%%", 10 + t % 50);
+    pl_header(l, "CPU", a);
+    pitem_t *sp = pl_spark(l, PC_BLUE, 0);
+    sp->n = HIST_CAP; sp->serial = (uint32_t)t + 1000; sp->vscale = 1;
+    for (int i = 0; i < HIST_CAP; i++) sp->v[0][i] = 0.3f + 0.25f * sinf((float)(i + t) * 0.21f) + 0.1f * sinf((float)(i + t) * 1.3f);
+    pitem_t *dy = pl_day(l, PC_BLUE);
+    dy->n = 120;
+    for (int i = 0; i < 120; i++) { dy->v[0][i] = 0.15f + 0.1f * sinf(i * 0.3f); dy->v[1][i] = dy->v[0][i] + 0.2f; }
+    static const float slots[3] = {0, 70, 150};
+    snprintf(a, sizeof a, "%d%%|4%%|3.12 2.80 2.51", 10 + t % 50);
+    pl_kv(l, "user|system|load", a, NULL, slots);
+    pitem_t *co = pl_cores(l);
+    co->n = 18;
+    for (int i = 0; i < 18; i++) { co->v[0][i] = fabsf(sinf((float)(i * 7 + t))); co->tag[i] = i >= 12; }
+    static const uint8_t cc[2] = {PC_BLUE, PC_ORANGE};
+    snprintf(a, sizeof a, "12%%|3%%");
+    pl_kv(l, "Performance|Super", a, cc, NULL);
+    pl_gap(l, 4);
+    const char *names[] = {"Safari", "WindowServer", "Xcode", "kernel_task", "Google Chrome Helper (Renderer)"};
+    for (int i = 0; i < 5; i++) {
+        float v = 30.0f / (i + 1) + (t / 2) % 3;
+        snprintf(b, sizeof b, "%.1f%%", v);
+        pl_proc(l, names[i], b, v / 33.0f, PC_BLUE);
+    }
+    pl_divider(l);
+    pl_header(l, "GPU", "7%");
+    pitem_t *g = pl_spark(l, PC_PURPLE, 0);
+    g->n = 120;
+    for (int i = 0; i < 120; i++) g->v[0][i] = 0.05f;
+    pl_kv(l, "renderer|tiler", "7%|2%", NULL, NULL);
+    pl_divider(l);
+    pl_header(l, "Memory", "62%");
+    pitem_t *m = pl_spark(l, PC_GREEN, 0);
+    m->n = 120;
+    for (int i = 0; i < 120; i++) m->v[0][i] = 0.62f;
+    pitem_t *st = pl_stack(l);
+    st->n = 4;
+    const float part[4] = {0.35f + 0.002f * ((t / 2) % 4), 0.08f, 0.02f, 0.18f};
+    const uint8_t col[4] = {PC_GREEN, PC_ORANGE, PC_PURPLE, PC_TEAL};
+    for (int i = 0; i < 4; i++) { st->v[0][i] = part[i]; st->tag[i] = col[i]; }
+    static const uint8_t k1[2] = {PC_GREEN, PC_ORANGE}, k2[2] = {PC_PURPLE, PC_TEAL};
+    snprintf(a, sizeof a, "%.1f GB|4.1 GB", 18.2 + 0.1 * ((t / 2) % 4));
+    pl_kv(l, "app|wired", a, k1, NULL);
+    pl_kv(l, "compressed|cached", "1.2 GB|9.3 GB", k2, NULL);
+    snprintf(a, sizeof a, "%.1f GB of 51.5 GB", 30.1 + 0.1 * ((t / 2) % 4));
+    pl_kv(l, "used", a, NULL, NULL);
+    pl_gap(l, 4);
+    for (int i = 0; i < 5; i++) {
+        snprintf(b, sizeof b, "%d MB", 900 - i * 60 + (t / 2) % 3);
+        pl_proc(l, names[i], b, 0.02f, PC_GREEN);
+    }
+    pl_divider(l);
+    pl_header(l, "Disk", "66%");
+    pl_bar(l, 0.66f, PC_TEAL);
+    static const float ds[2] = {0, 170};
+    pl_kv(l, "free|purgeable", "337 GB of 995 GB|5.4 GB", NULL, ds);
+    pl_caption(l, "Right-click the menu bar item for settings");
+}
+
+static void build(plist_t *l, int t) { if (getenv("OLD")) build_old(l, t); else build_new(l, t); }
 static void png(IOSurfaceRef s, const char *path);
 static void png2(IOSurfaceRef st, IOSurfaceRef dy, const char *path) {
     // composite static under dynamic into the static surface copy for the PNG

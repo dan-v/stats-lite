@@ -526,7 +526,7 @@ static void day_to(pitem_t *it, int series) {
 
 static void build_panel_list(plist_t *l) {
     const snapshot_t *s = &S.snap;
-    char a[48], b[48], c[48];
+    char a[48], b[48];
     pl_reset(l);
     int first = 1;
 #define SECTION() do { if (!first) pl_divider(l); first = 0; } while (0)
@@ -538,25 +538,42 @@ static void build_panel_list(plist_t *l) {
         if (sp) ring_to(sp, 0, &S.hist[H_CPU], 1);
         pitem_t *dy = pl_day(l, PC_BLUE);
         if (dy) day_to(dy, HS_CPU);
-        fmt_pct(a, s->cpu_system); fmt_pct(b, s->cpu_user); fmt_pct(c, 1 - s->cpu_total);
-        pl_row(l, "System", a); pl_row(l, "User", b); pl_row(l, "Idle", c);
-        for (int k = 0; k < s->nclusters && s->ncores; k++) {
-            char lab[48];
-            snprintf(lab, sizeof lab, "%s cores", s->cluster_name[k]);
-            fmt_pct(a, s->cluster_avg[k]);
-            pl_row(l, lab, a);
-        }
+        char line[96];
+        static const float kCpuSlots[3] = {0, 70, 150};
+        fmt_pct(a, s->cpu_user); fmt_pct(b, s->cpu_system);
+        snprintf(line, sizeof line, "%s|%s|%.2f %.2f %.2f", a, b, s->load[0], s->load[1], s->load[2]);
+        pl_kv(l, "user|system|load", line, NULL, kCpuSlots);
         if (s->ncores) {
             pitem_t *co = pl_cores(l);
             if (co) {
                 co->n = (uint8_t)s->ncores;
                 for (int i = 0; i < s->ncores; i++) { co->v[0][i] = s->core[i]; co->tag[i] = s->core_cluster[i] == s->nclusters - 1; }
             }
+            if (s->nclusters > 1) {  // which bar color is which cluster (the last cluster is drawn orange)
+                char names[96];
+                names[0] = line[0] = 0;
+                uint8_t col[4];
+                int nk = s->nclusters < 4 ? s->nclusters : 4;
+                for (int k = 0; k < nk; k++) {
+                    fmt_pct(a, s->cluster_avg[k]);
+                    if (k) { strlcat(names, "|", sizeof names); strlcat(line, "|", sizeof line); }
+                    strlcat(names, s->cluster_name[k], sizeof names);
+                    strlcat(line, a, sizeof line);
+                    col[k] = k == s->nclusters - 1 ? PC_ORANGE : PC_BLUE;
+                }
+                pl_kv(l, names, line, col, NULL);
+            }
         }
-        snprintf(a, sizeof a, "%.2f  %.2f  %.2f", s->load[0], s->load[1], s->load[2]);
-        pl_row(l, "Load average", a);
-        static const char *const kThermal[] = {"Nominal", "Fair", "Serious (throttling)", "Critical (throttling)"};
-        pl_row(l, "Thermal state", kThermal[S.thermal >= 0 && S.thermal <= 3 ? S.thermal : 0]);
+        static const char *const kThermal[] = {"", "Thermal state: fair", "Throttling: thermal state serious", "Throttling: thermal state critical"};
+        if (S.thermal >= 1 && S.thermal <= 3) pl_note(l, kThermal[S.thermal]);
+        if (S.procs_valid && S.ntop_cpu) {
+            pl_gap(l, 4);
+            float top = fmaxf(S.top_cpu[0].cpu, 1.0f);
+            for (int i = 0; i < S.ntop_cpu; i++) {
+                snprintf(b, sizeof b, "%.1f%%", S.top_cpu[i].cpu * 100);
+                pl_proc(l, app_name(&S.top_cpu[i]), b, S.top_cpu[i].cpu / top, PC_BLUE);
+            }
+        }
         spike_t sp3[3];
         int nsp = history_spikes(CFAbsoluteTimeGetCurrent() + kCFAbsoluteTimeIntervalSince1970, 60, SPIKE_THRESHOLD * 100, sp3, 3);
         if (nsp) {
@@ -571,13 +588,6 @@ static void build_panel_list(plist_t *l) {
                 pl_small(l, a, b);
             }
         }
-        if (S.procs_valid && S.ntop_cpu) {
-            pl_gap(l, 4);
-            for (int i = 0; i < S.ntop_cpu; i++) {
-                snprintf(b, sizeof b, "%.1f%%", S.top_cpu[i].cpu * 100);
-                pl_small(l, app_name(&S.top_cpu[i]), b);
-            }
-        }
     }
     if (S.modules & (1u << M_GPU)) {
         SECTION();
@@ -587,8 +597,10 @@ static void build_panel_list(plist_t *l) {
         if (sp) ring_to(sp, 0, &S.hist[H_GPU], 1);
         pitem_t *dy = pl_day(l, PC_PURPLE);
         if (dy) day_to(dy, HS_GPU);
+        char line[96];
         fmt_pct(a, s->gpu_render); fmt_pct(b, s->gpu_tiler);
-        pl_row(l, "Renderer", a); pl_row(l, "Tiler", b);
+        snprintf(line, sizeof line, "%s|%s", a, b);
+        pl_kv(l, "renderer|tiler", line, NULL, NULL);
     }
     if (S.modules & (1u << M_MEM)) {
         SECTION();
@@ -598,20 +610,36 @@ static void build_panel_list(plist_t *l) {
         if (sp) ring_to(sp, 0, &S.hist[H_MEM], 1);
         pitem_t *dy = pl_day(l, PC_GREEN);
         if (dy) day_to(dy, HS_MEM);
-        char u[24], t[24];
+        // app, wired, compressed and cached as one bar; the rest of the track is free
+        double tot = s->mem_total ? (double)s->mem_total : 1;
+        pitem_t *st = pl_stack(l);
+        if (st) {
+            const uint64_t part[4] = {s->mem_app, s->mem_wired, s->mem_compressed, s->mem_cache};
+            const uint8_t col[4] = {PC_GREEN, PC_ORANGE, PC_PURPLE, PC_TEAL};
+            st->n = 4;
+            for (int i = 0; i < 4; i++) { st->v[0][i] = (float)(part[i] / tot); st->tag[i] = col[i]; }
+        }
+        char line[96], u[24], t[24];
+        static const uint8_t kc1[2] = {PC_GREEN, PC_ORANGE}, kc2[2] = {PC_PURPLE, PC_TEAL};
+        fmt_bytes(u, sizeof u, (double)s->mem_app); fmt_bytes(t, sizeof t, (double)s->mem_wired);
+        snprintf(line, sizeof line, "%s|%s", u, t);
+        pl_kv(l, "app|wired", line, kc1, NULL);
+        fmt_bytes(u, sizeof u, (double)s->mem_compressed); fmt_bytes(t, sizeof t, (double)s->mem_cache);
+        snprintf(line, sizeof line, "%s|%s", u, t);
+        pl_kv(l, "compressed|cached", line, kc2, NULL);
         fmt_bytes(u, sizeof u, (double)s->mem_used); fmt_bytes(t, sizeof t, (double)s->mem_total);
-        snprintf(a, sizeof a, "%s of %s", u, t); pl_row(l, "Used", a);
-        fmt_bytes(a, sizeof a, (double)s->mem_app); pl_row(l, "App", a);
-        fmt_bytes(a, sizeof a, (double)s->mem_wired); pl_row(l, "Wired", a);
-        fmt_bytes(a, sizeof a, (double)s->mem_compressed); pl_row(l, "Compressed", a);
-        fmt_bytes(a, sizeof a, (double)s->mem_cache); pl_row(l, "Cached", a);
-        fmt_bytes(a, sizeof a, (double)s->swap_used); pl_row(l, "Swap", a);
-        pl_row(l, "Pressure", s->mem_pressure >= 4 ? "Critical" : s->mem_pressure >= 2 ? "Warning" : "Normal");
+        snprintf(line, sizeof line, "%s of %s", u, t);
+        pl_kv(l, "used", line, NULL, NULL);
+        if (s->swap_used > 0 || s->mem_pressure >= 2) {
+            fmt_bytes(u, sizeof u, (double)s->swap_used);
+            snprintf(line, sizeof line, "%s|%s", u, s->mem_pressure >= 4 ? "critical" : s->mem_pressure >= 2 ? "warning" : "normal");
+            pl_kv(l, "swap|pressure", line, NULL, NULL);
+        }
         if (S.procs_valid && S.ntop_mem) {
             pl_gap(l, 4);
             for (int i = 0; i < S.ntop_mem; i++) {
                 fmt_bytes(b, sizeof b, (double)S.top_mem[i].memory);
-                pl_small(l, app_name(&S.top_mem[i]), b);
+                pl_proc(l, app_name(&S.top_mem[i]), b, (float)(S.top_mem[i].memory / tot), PC_GREEN);
             }
         }
     }
@@ -620,11 +648,12 @@ static void build_panel_list(plist_t *l) {
         fmt_pct(a, disk_used_frac());
         pl_header(l, "Disk", a);
         pl_bar(l, disk_used_frac(), PC_TEAL);
-        char u[24], t[24];
-        fmt_bytes(u, sizeof u, (double)(s->disk_total - s->disk_free)); fmt_bytes(t, sizeof t, (double)s->disk_total);
-        snprintf(a, sizeof a, "%s of %s", u, t); pl_row(l, "Used", a);
-        fmt_bytes(a, sizeof a, (double)s->disk_free); pl_row(l, "Available", a);
-        fmt_bytes(a, sizeof a, (double)s->disk_purgeable); pl_row(l, "Purgeable", a);
+        char line[96], u[24], t[24], g[24];
+        fmt_bytes(u, sizeof u, (double)s->disk_free); fmt_bytes(t, sizeof t, (double)s->disk_total);
+        fmt_bytes(g, sizeof g, (double)s->disk_purgeable);
+        static const float kDiskSlots[2] = {0, 170};
+        snprintf(line, sizeof line, "%s of %s|%s", u, t, g);
+        pl_kv(l, "free|purgeable", line, NULL, kDiskSlots);
         pitem_t *sp = pl_spark(l, PC_TEAL, PC_PINK);
         if (sp) {
             float mx = nice_max(fmaxf(fmaxf(ring_max(&S.hist[H_DISK_R]), ring_max(&S.hist[H_DISK_W])), 1e5f));
@@ -633,7 +662,8 @@ static void build_panel_list(plist_t *l) {
             sp->nseries = 2;
         }
         fmt_speed(a, sizeof a, s->disk_read_bps); fmt_speed(b, sizeof b, s->disk_write_bps);
-        pl_row(l, "Read", a); pl_row(l, "Write", b);
+        snprintf(line, sizeof line, "%s|%s", a, b);
+        pl_kv(l, "read|write", line, NULL, NULL);
     }
     if (S.modules & (1u << M_NET)) {
         SECTION();
@@ -645,10 +675,13 @@ static void build_panel_list(plist_t *l) {
             ring_to(sp, 1, &S.hist[H_NET_OUT], mx);
             sp->nseries = 2;
         }
+        char line[96];
         fmt_speed(a, sizeof a, s->net_in_bps); fmt_speed(b, sizeof b, s->net_out_bps);
-        pl_row(l, "Download", a); pl_row(l, "Upload", b);
+        snprintf(line, sizeof line, "%s|%s", a, b);
+        pl_kv(l, "down|up", line, NULL, NULL);
         fmt_bytes(a, sizeof a, (double)s->net_in_total); fmt_bytes(b, sizeof b, (double)s->net_out_total);
-        pl_row(l, "Total received", a); pl_row(l, "Total sent", b);
+        snprintf(line, sizeof line, "%s|%s", a, b);
+        pl_kv(l, "received|sent", line, NULL, NULL);
     }
     if (S.modules & (1u << M_SENSORS)) {
         SECTION();
@@ -804,7 +837,7 @@ static void lean_panel_render(void) {
         for (int i = 0; i < gPL.n; i++) if (gPR.changed[i] == gPR.frame) kinds[gPL.item[i].kind]++;
         if (frames == 30) {
             fprintf(stderr, "panel: %.1f rows/frame repainted, %.1f sparks scrolled; changed by kind:", rows / 30.0, scrolled / 30.0);
-            for (int k = 0; k < 10; k++) fprintf(stderr, " %d:%.1f", k, kinds[k] / 30.0);
+            for (int k = 0; k < 14; k++) fprintf(stderr, " %d:%.1f", k, kinds[k] / 30.0);
             fprintf(stderr, " (of %d rows); full repaints %u, static repaints %u so far\n", gPL.n, gPR.full_repaints, gPR.static_repaints);
             frames = rows = scrolled = 0;
             memset(kinds, 0, sizeof kinds);

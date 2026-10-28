@@ -58,6 +58,7 @@ Every later build was A/B tested against the previous measured one, interleaved:
 | dff13075 → panel clears and copies only the columns an item's text inked (`results/ab-ext.log`, three rounds) | 35.6 → 33.1 M (panel-only change: this is the noise of sequential runs) | 116.4 → 112.5 M, energy 15.4 → 14.2 mJ | 28.1 MB |
 | 1b828e30 → spike-attribution baseline only at the first busy tick of a minute (`quick-ab.sh`, three paired 60 s rounds) | **−8.8% instructions, −5.7% energy, −17% syscalls** (rounds 1.02, 0.91, 0.88) | | |
 | e802659c → per-module refresh rates; new defaults GPU 2 s (was 1 s), memory 1 s (was 2 s) (`bench/results` not kept: three paired 60 s rounds, both builds at their defaults) | **−19% instructions, −17% energy** (rounds 0.835, 0.799, 0.812) | | |
+| compact panel layout: detail as key/value lines (labels on the static layer), memory as one segmented bar, full-size process rows with share bars (`quick-ab.sh`, three paired 30 s rounds, panel open) | 0.975 (unchanged) | +6.5% instructions, +10% energy | |
 
 ## The floor
 
@@ -166,6 +167,8 @@ The table above renders into whichever surface is free, and every row changes ev
 | Shown surface held, rows behind are copied from it ("copy-back") | 0.43 M | 7.3 |
 
 Rows are also cleared and copied only across the columns the item's text may have inked (its advance plus 3 pt, recorded per surface), instead of the full 600-pixel width: 433k → 416k instructions and about 10% fewer cycles per incremental frame (less memory traffic). A test row alternates between long and short values; narrowing the recorded extent by 1 pt makes the held-surface test fail.
+
+`panelbench` now builds the compact layout the app uses; `OLD=1` builds the previous row-per-value layout. With the same content, the compact layout costs about 80k more instructions per frame, almost all from the process rows being drawn at full size with a share bar instead of in the 10 pt small font. Key/value lines keep their labels and color dots on the static layer, so only the values repaint (drawing whole lines dynamically cost another 50k per frame).
 
 Copy-back copies rows that changed after the stale surface was painted but not in the current frame, about 16k instructions per row against 28k to redraw one. Sparklines are the exception: scrolling one by two samples from the stale surface's own state is cheaper than copying it and then scrolling by one. A unit test holds the shown surface like the compositor, changes rows at three rates, and compares 26 frames with full renders (at most 1/255 off at one sparkline edge pixel, which scrolling by two samples already produced before).
 

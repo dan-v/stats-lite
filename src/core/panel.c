@@ -20,6 +20,10 @@ static float item_height(const pitem_t *it) {
     case PI_BAR: return 12;
     case PI_DIVIDER: return 12;
     case PI_GAP: return it->h;
+    case PI_NOTE: return 14;
+    case PI_PROC: return 18;
+    case PI_STACK: return 14;
+    case PI_KV: return 14;
     }
     return 0;
 }
@@ -87,6 +91,33 @@ void pl_gap(plist_t *l, float h) {
     pitem_t *it = add(l, PI_GAP);
     if (it) it->h = h;
 }
+void pl_note(plist_t *l, const char *a) { set2(add(l, PI_NOTE), a, NULL); }
+void pl_proc(plist_t *l, const char *name, const char *value, float share, int c) {
+    pitem_t *it = add(l, PI_PROC);
+    if (!it) return;
+    set2(it, name, value);
+    it->color = (uint8_t)c;
+    it->n = 1;
+    it->nseries = 1;
+    it->v[0][0] = share;
+}
+void pl_kv(plist_t *l, const char *labels, const char *values, const uint8_t *dots, const float *offsets) {
+    pitem_t *it = add(l, PI_KV);
+    if (!it) return;
+    set2(it, labels, values);
+    int n = 1;
+    for (const char *q = it->a; *q; q++) n += *q == '|';
+    it->n = (uint8_t)(n > 4 ? 4 : n);
+    for (int i = 0; i < it->n; i++) {
+        it->tag[i] = dots ? dots[i] : 0xff;
+        it->v[0][i] = offsets ? offsets[i] : 0;
+    }
+}
+pitem_t *pl_stack(plist_t *l) {
+    pitem_t *it = add(l, PI_STACK);
+    if (it) it->nseries = 1;
+    return it;
+}
 
 static uint64_t fnv(uint64_t h, const void *p, size_t n) {
     const uint8_t *b = p;
@@ -99,14 +130,15 @@ static uint64_t static_hash(const pitem_t *it) {
     uint8_t k[3] = {it->kind, it->kind == PI_CORES ? it->n : 0, it->color};
     h = fnv(h, k, sizeof k);
     h = fnv(h, &it->h, sizeof it->h);
-    if (it->kind == PI_HEADER || it->kind == PI_ROW || it->kind == PI_CAPTION) h = fnv(h, it->a, strlen(it->a) + 1);
+    if (it->kind == PI_HEADER || it->kind == PI_ROW || it->kind == PI_CAPTION || it->kind == PI_KV) h = fnv(h, it->a, strlen(it->a) + 1);
+    if (it->kind == PI_KV) { h = fnv(h, it->tag, it->n); h = fnv(h, it->v[0], sizeof(float) * it->n); h = fnv(h, &it->n, 1); }
     return h;
 }
 // Dynamic content: values and chart ink.
 static uint64_t item_hash(const pitem_t *it) {
     uint64_t h = 0xcbf29ce484222325ull;
     h = fnv(h, it, offsetof(pitem_t, a));
-    if (it->kind == PI_SMALL) h = fnv(h, it->a, strlen(it->a) + 1);
+    if (it->kind == PI_SMALL || it->kind == PI_NOTE || it->kind == PI_PROC) h = fnv(h, it->a, strlen(it->a) + 1);
     h = fnv(h, it->b, strlen(it->b) + 1);
     for (int s = 0; s < it->nseries && s < 2; s++) {
         // quantize to 1/1024 so float noise below a pixel doesn't force a repaint
@@ -115,7 +147,7 @@ static uint64_t item_hash(const pitem_t *it) {
             h = fnv(h, &q, 2);
         }
     }
-    if (it->kind == PI_CORES) h = fnv(h, it->tag, it->n);
+    if (it->kind == PI_CORES || it->kind == PI_STACK) h = fnv(h, it->tag, it->n);
     return h;
 }
 
@@ -371,6 +403,63 @@ static void draw_item(dc_t *c, const pitem_t *it, float y, int part) {
     case PI_CAPTION:
         if (st) text(c, &p->small, it->a, M, y, 0, W - 2 * M, sec, 1);
         break;
+    case PI_NOTE:
+        if (dy) text(c, &p->small, it->a, M, y, 0, W - 2 * M, sec, 1);
+        break;
+    case PI_PROC: {
+        // name and value, with the share as a thin bar along the bottom of the row
+        int bx = (int)lroundf(M * s), bw = (int)lroundf((W - 2 * M) * s), bh = (int)lroundf(2 * s);
+        int by = dev_y_bottom(c, y + 17);
+        // square ends: at 2 pt rounding is invisible, and a rounded rect this thin is all corner math
+        if (st) blit_fill(&c->t, bx, by, bw, bh, ink(c, 0.07f));
+        if (dy) {
+            int fw = (int)lroundf(fminf(fmaxf(it->v[0][0], 0), 1) * (float)bw);
+            if (fw > 0) blit_fill(&c->t, bx, by, fw < bh ? bh : fw, bh, p->palette[d][it->color]);
+            text(c, &p->label, it->a, M, y, 0, 200, pri, 0);
+            text(c, &p->value, it->b, W - M, y, 1, 80, pri, 0);
+        }
+        break;
+    }
+    case PI_KV: {
+        char la[48], va[48];
+        strlcpy(la, it->a, sizeof la);
+        strlcpy(va, it->b, sizeof va);
+        char *ln = la, *vn = va;
+        float slot = (W - 2 * M) / (float)(it->n ? it->n : 1);
+        for (int i = 0; i < it->n && ln; i++) {
+            char *lb = strchr(ln, '|'), *vb = vn ? strchr(vn, '|') : NULL;
+            if (lb) *lb = 0;
+            if (vb) *vb = 0;
+            float x = M + (it->v[0][i] > 0 || i == 0 ? it->v[0][i] : slot * (float)i);
+            if (it->tag[i] != 0xff) {
+                int dsz = (int)lroundf(6 * s);
+                if (st) blit_round_rect(&c->t, (int)lroundf(x * s), dev_y_bottom(c, y + 10), dsz, dsz, 3 * s, p->palette[d][it->tag[i]]);
+                x += 9;
+            }
+            if (st) text(c, &p->small, ln, x, y, 0, slot, sec, 1);
+            if (dy && vn) text(c, &p->small, vn, x + (float)glyphset_width(&p->small, ln) + 4, y, 0, W - M - x, pri, 0);
+            ln = lb ? lb + 1 : NULL;
+            vn = vb ? vb + 1 : NULL;
+        }
+        break;
+    }
+    case PI_STACK: {
+        int bx = (int)lroundf(M * s), bw = (int)lroundf((W - 2 * M) * s), bh = (int)lroundf(8 * s);
+        int by = dev_y_bottom(c, y + 8);
+        if (st) blit_round_rect(&c->t, bx, by, bw, bh, 3 * s, ink(c, 0.1f));
+        if (dy) {
+            float acc = 0;
+            int gap = (int)lroundf(s);
+            for (int i = 0; i < it->n; i++) {
+                int x0 = bx + (int)lroundf(acc * (float)bw);
+                acc += fminf(fmaxf(it->v[0][i], 0), 1);
+                int x1 = bx + (int)lroundf(fminf(acc, 1) * (float)bw);
+                if (x1 - x0 - gap < 2) continue;
+                blit_round_rect(&c->t, x0, by, x1 - x0 - gap, bh, x1 - x0 > 6 * s ? 2 * s : 0, p->palette[d][it->tag[i]]);
+            }
+        }
+        break;
+    }
     case PI_SPARK: {
         int bx = (int)lroundf(M * s), bw = (int)lroundf((W - 2 * M) * s), bh = (int)lroundf(34 * s);
         int by = dev_y_bottom(c, y + 34);
@@ -490,7 +579,9 @@ static void clear_band(const target_t *t, int y0, int y1, int x0, int x1) {
 }
 
 // Items whose dynamic part is text only; others may ink their whole width.
-static int text_only(int kind) { return kind == PI_HEADER || kind == PI_ROW || kind == PI_SMALL || kind == PI_CAPTION; }
+static int text_only(int kind) {
+    return kind == PI_HEADER || kind == PI_ROW || kind == PI_SMALL || kind == PI_CAPTION || kind == PI_NOTE || kind == PI_KV;
+}
 
 // Device rows (from the box bottom) that can hold ink: the highest sample plus the
 // line's half width and anti-aliasing margin.

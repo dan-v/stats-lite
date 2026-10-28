@@ -19,6 +19,12 @@ enum {
     PI_BAR,       // single progress bar: v[0]
     PI_DIVIDER,
     PI_GAP,       // vertical space of `h` points
+    PI_NOTE,      // a: detail line (secondary small, full width)
+    PI_PROC,      // a: process name, b: value, v[0][0]: share 0..1 drawn as a bar behind the row
+    PI_STACK,     // segmented bar: v[0][i] fractions of the whole, tag[i] palette color; n segments
+    PI_KV,        // a: labels, b: values, '|'-separated (up to 4); labels and dots static, values
+                  // dynamic. tag[i]: dot color (0xff: none); v[0][i]: slot offset from the margin
+                  // (pt; all 0: equal slots)
 };
 
 #define PANEL_MAX_ITEMS 96
@@ -104,3 +110,7 @@ pitem_t *pl_cores(plist_t *l);
 void pl_bar(plist_t *l, float frac, int color);
 void pl_divider(plist_t *l);
 void pl_gap(plist_t *l, float h);
+void pl_note(plist_t *l, const char *a);
+void pl_proc(plist_t *l, const char *name, const char *value, float share, int c);
+pitem_t *pl_stack(plist_t *l);
+void pl_kv(plist_t *l, const char *labels, const char *values, const uint8_t *dots, const float *offsets);
