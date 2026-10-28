@@ -1,0 +1,2 @@
+IOReport GPUPH residency:  1990654 instr/sample (last util 86.0%)
+PerformanceStatistics (fastio):   236848 instr/sample (util 0%)

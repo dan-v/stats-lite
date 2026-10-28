@@ -1,0 +1,5 @@
+full scan every 1:     4229167 instr/refresh
+full scan every 3:     1642036 instr/refresh
+tiered, cold every  4:  1714863 instr/refresh
+tiered, cold every  6:  1402442 instr/refresh
+tiered, cold every 10:  1162457 instr/refresh

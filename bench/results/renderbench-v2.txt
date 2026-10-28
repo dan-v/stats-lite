@@ -1,0 +1,5 @@
+CG text + CGImage (crop)         243859 instr/frame    15.1 us/frame
+CG text + CGImage (exact)        193996 instr/frame    10.4 us/frame
+CG text + IOSurface              131034 instr/frame     4.8 us/frame
+atlas blit + CGImage (exact)     157279 instr/frame     9.1 us/frame
+atlas blit + IOSurface            94117 instr/frame     4.2 us/frame

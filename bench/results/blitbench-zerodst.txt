@@ -1,0 +1,4 @@
+scalar    60552 instr/frame    3.17 us/frame  (5 strings + 115 KB clear)
+NEON      48572 instr/frame    2.83 us/frame  (5 strings + 115 KB clear)
+asm       29190 instr/frame    2.06 us/frame  (5 strings + 115 KB clear)
+max channel difference vs scalar: NEON 0, asm 0

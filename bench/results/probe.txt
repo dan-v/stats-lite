@@ -1,0 +1,25 @@
+host_statistics(CPU_LOAD)                               359 ns/call         8332 instr/call
+host_processor_info + vm_deallocate                    2998 ns/call        45381 instr/call
+host_statistics64(VM_INFO64)                            376 ns/call         8531 instr/call
+sysctlbyname(memorystatus_vm_pressure_level)            843 ns/call        17915 instr/call
+sysctl(mib, pressure_level)                             374 ns/call         8058 instr/call
+sysctlbyname(vm.swapusage)                              496 ns/call        10604 instr/call
+getloadavg                                              238 ns/call         5227 instr/call
+getifaddrs + walk + freeifaddrs                       23700 ns/call       548105 instr/call
+sysctl(NET_RT_IFLIST2, en0 only)                       6797 ns/call       174881 instr/call
+sysctl(NET_RT_IFLIST2, all interfaces)                34363 ns/call       837361 instr/call
+SCDynamicStoreCopyValue(primary iface)                15500 ns/call        76890 instr/call
+IORegistryEntryCreateCFProperty(disk Statistics)       3968 ns/call        81842 instr/call
+statfs(/)                                               439 ns/call         8570 instr/call
+IORegistryEntryCreateCFProperty(GPU PerfStats)        11477 ns/call       218364 instr/call
+IORegistryEntryCreateCFProperties(GPU all)          1204121 ns/call     37147728 instr/call
+IOServiceGetMatchingServices(IOAccelerator)            3092 ns/call        72546 instr/call
+SMC readKeyInfo                                        2187 ns/call        50409 instr/call
+SMC readBytes (cached keyinfo)                       190200 ns/call        60664 instr/call
+IOPSCopyPowerSourcesInfo+List+Desc                    28341 ns/call       108124 instr/call
+IORegistryEntryCreateCFProperty(battery CurrentCapacity)       2109 ns/call        35306 instr/call
+proc_listallpids                                       8121 ns/call        22522 instr/call
+proc_pid_rusage(V2) over all pids                    573596 ns/call      8578737 instr/call
+proc_pidinfo(TASKINFO) over all pids                 562784 ns/call      8500496 instr/call
+proc_name over all pids                              305829 ns/call      7404911 instr/call
+processes=979 rusage_ok=634 taskinfo_ok=633

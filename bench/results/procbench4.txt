@@ -1,0 +1,5 @@
+tiered cold 12 warm 3 hot>=0.5%:  113 reads   913123 instr/refresh
+tiered cold 12 warm 6 hot>=0.5%:   89 reads   755091 instr/refresh
+tiered cold 12 warm 3 hot>=1.0%:  107 reads   880749 instr/refresh
+tiered cold 12 warm 6 hot>=1.0%:   89 reads   757824 instr/refresh
+tiered cold 12 warm 6 hot>=2.0%:   86 reads   733698 instr/refresh

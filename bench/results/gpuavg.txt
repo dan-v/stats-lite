@@ -1,0 +1,7 @@
+# bench/gpuavg.m (03:31, M5 Pro): Metal load ~100 ms on / 100 ms off, then stopped
+every 0.25 s: 52 68 58 75 92 83 94 94 63 70 90 92 50 85 59 66
+every 2 s:    70 88 73 70 76 86
+every 1 s:    83 86 69 76 78 85 78 77
+idle, 1 s:    88 5 5 5
+# Never 0/100 at 0.25 s -> smoothed by the driver; falls to 5% within 1 s of the load
+# stopping -> a short moving average, not an accumulator since the previous read.

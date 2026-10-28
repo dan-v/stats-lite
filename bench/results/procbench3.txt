@@ -1,0 +1,5 @@
+full scan every 1:            648 reads  4126308 instr/refresh
+tiered cold 4 warm 3 hot>=0.5%:  196 reads  1412448 instr/refresh
+tiered cold 8 warm 3 hot>=0.5%:  136 reads  1047664 instr/refresh
+tiered cold 12 warm 3 hot>=0.5%:  114 reads   914550 instr/refresh
+tiered cold 16 warm 3 hot>=0.5%:   99 reads   824719 instr/refresh

@@ -1,0 +1,14 @@
+.original-prefs-backup.plist
+rumeter
+session-state
+probe
+probe2
+*.dSYM/
+renderbench
+procbench
+probe3
+panelbench
+winlist
+sparkbench
+gpuavg
+blitbench
