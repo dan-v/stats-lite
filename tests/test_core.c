@@ -20,6 +20,8 @@
 #include "../src/core/sampler.h"
 
 static int failures, checks;
+// CI runners are VMs: no Apple GPU driver and noisy timing, so those tests are skipped there.
+static int on_ci(void) { return getenv("CI") != NULL; }
 #define CHECK(c, ...) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
 
 // ---- OSSerializeBinary builder ----------------------------------------------------
@@ -121,7 +123,7 @@ static void test_scan_sum(void) {
 
 // The fast MIG path must agree with the public CF API on real registry entries.
 static void test_fastio_live(void) {
-    io_service_t gpu = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOAccelerator"));
+    io_service_t gpu = on_ci() ? 0 : IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOAccelerator"));
     if (gpu) {
         fio_key_t k[1] = {FIO_KEY("In use system memory")};
         int64_t fast = -1;
@@ -643,6 +645,7 @@ static void test_utf8_truncation(void) {
 // A process that has been idle (cold tier, rarely read) and starts burning CPU must
 // show up quickly through the unexplained-CPU trigger.
 static void test_procs_wakeup(void) {
+    if (on_ci()) return;
     pid_t child = fork();
     if (child == 0) {
         sleep(7);
@@ -674,6 +677,7 @@ static void test_procs_wakeup(void) {
 }
 
 static void test_gpuprocs(void) {
+    if (on_ci()) return;
     proc_row_t r[5];
     int n = -1, ok = 0;
     for (int i = 0; i < 3; i++) { ok = gpuprocs_sample(-1, r, &n, 5); usleep(100000); }

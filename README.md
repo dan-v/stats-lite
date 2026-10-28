@@ -21,7 +21,11 @@ Default refresh rates: CPU, memory and network every second, GPU every 2 s, sens
 
 ## Install
 
-Requires macOS 13 or later on Apple Silicon and the Xcode Command Line Tools.
+Requires macOS 13 or later on Apple Silicon.
+
+Download `StatsLite.zip` from [Releases](https://github.com/dan-v/stats-lite/releases), unzip it and move `Stats Lite.app` to Applications. The app is not notarized, so macOS blocks the first launch: allow it under System Settings → Privacy & Security → Open Anyway, or run `xattr -dr com.apple.quarantine "/Applications/Stats Lite.app"`.
+
+To build from source with the Xcode Command Line Tools:
 
 ```sh
 make
@@ -62,3 +66,7 @@ bench/      measurement tools and results
 - Top processes by CPU and memory are limited to the current user's processes; GPU covers all processes.
 - Bluetooth batteries cover AirPods and Apple keyboards, mice and trackpads; devices that report battery only over Bluetooth LE are not read.
 - No remote monitoring and no desktop widgets.
+
+## License
+
+MIT
