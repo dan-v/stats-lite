@@ -84,6 +84,41 @@ static void test_scan(void) {
     CHECK(fio_scan(unk, 3, keys, 1, out) == -1, "unknown type");
 }
 
+static void ref(stream_t *s, uint32_t idx, int last) { put(s, (last ? 0x80000000u : 0) | 0x0c000000u | idx); }
+
+// AppUsage: an array of dictionaries; repeated key symbols arrive as references to
+// their first occurrence (object index, counting every non-reference object).
+static void test_scan_sum(void) {
+    stream_t s = {0};
+    put(&s, 0xd3);
+    put(&s, 0x82000000u | 2);                          // 0 array
+    put(&s, 0x01000000u | 3);                          // 1 dict
+    sym(&s, "API", 0); str(&s, "Metal", 0);            // 2, 3
+    sym(&s, "lastSubmittedTime", 0); num(&s, 999, 0);  // 4, 5
+    sym(&s, "accumulatedGPUTime", 0); num(&s, 1000, 1); // 6, 7
+    put(&s, 0x81000000u | 3);                          // 8 dict, last in the array
+    ref(&s, 2, 0); ref(&s, 3, 0);
+    ref(&s, 4, 0); num(&s, 5, 0);
+    ref(&s, 6, 0); num(&s, 234, 1);
+    fio_key_t k = FIO_KEY("accumulatedGPUTime");
+    int64_t sum = -1;
+    CHECK(fio_scan_sum(s.w, s.n, k, &sum) == 2 && sum == 1234, "sum over referenced keys: %lld", sum);
+    fio_key_t other = FIO_KEY("lastSubmittedTime");
+    CHECK(fio_scan_sum(s.w, s.n, other, &sum) == 2 && sum == 1004, "other key: %lld", sum);
+
+    stream_t e = {0};
+    put(&e, 0xd3); put(&e, 0x82000000u);  // empty array
+    CHECK(fio_scan_sum(e.w, e.n, k, &sum) == 0 && sum == 0, "empty");
+
+    // A string value spelling the key is not a key; a shared value goes to CF.
+    stream_t v = {0};
+    put(&v, 0xd3); put(&v, 0x81000000u | 2);
+    sym(&v, "name", 0); str(&v, "accumulatedGPUTime", 0);
+    sym(&v, "accumulatedGPUTime", 0); ref(&v, 0, 1);
+    CHECK(fio_scan_sum(v.w, v.n, k, &sum) == -1, "referenced value");
+    for (size_t cut = 1; cut < s.n; cut++) CHECK(fio_scan_sum(s.w, cut, k, &sum) == -1, "truncated at %zu", cut);
+}
+
 // The fast MIG path must agree with the public CF API on real registry entries.
 static void test_fastio_live(void) {
     io_service_t gpu = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOAccelerator"));
@@ -638,6 +673,20 @@ static void test_procs_wakeup(void) {
     procs_reset();
 }
 
+static void test_gpuprocs(void) {
+    proc_row_t r[5];
+    int n = -1, ok = 0;
+    for (int i = 0; i < 3; i++) { ok = gpuprocs_sample(-1, r, &n, 5); usleep(100000); }
+    CHECK(ok && n >= 0 && n <= 5, "gpuprocs ok %d n %d", ok, n);
+    for (int i = 0; i < n; i++) {
+        CHECK(r[i].pid > 0 && r[i].name[0] && r[i].cpu > 0 && r[i].cpu < 2, "row %d: pid %d %s %f", i, r[i].pid, r[i].name, r[i].cpu);
+        CHECK(i == 0 || r[i - 1].cpu >= r[i].cpu, "sorted");
+    }
+    gpuprocs_reset();
+    gpuprocs_sample(-1, r, &n, 5);
+    CHECK(gpuprocs_last_reads() > 0, "reopen reads every client once");
+}
+
 int main(void) {
     test_spark_spike_scrolls_out();
     test_procs_wakeup();
@@ -650,6 +699,8 @@ int main(void) {
     test_blit_matches_cg();
     test_history();
     test_scan();
+    test_scan_sum();
+    test_gpuprocs();
     test_fastio_live();
     test_sampler();
     test_procs();

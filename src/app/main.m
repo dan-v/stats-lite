@@ -69,8 +69,8 @@ static struct {
     int screens_asleep, locked, inactive, occluded, system_asleep;
     CFRunLoopTimerRef timer;
     int panel_open;
-    proc_row_t top_cpu[6], top_mem[6];
-    int ntop_cpu, ntop_mem, procs_valid;
+    proc_row_t top_cpu[6], top_mem[6], top_gpu[6];
+    int ntop_cpu, ntop_mem, ntop_gpu, procs_valid, gpu_procs_valid;
     // Benchmark knobs (hidden defaults, read at launch) for cost attribution.
     int bench_skip;     // 1: sample only once, 2: never render, 4: render but never upload
     int timer_kind;     // 0: CFRunLoopTimer aligned to seconds, 1: unaligned, 2: dispatch timer on main queue
@@ -601,6 +601,13 @@ static void build_panel_list(plist_t *l) {
         fmt_pct(a, s->gpu_render); fmt_pct(b, s->gpu_tiler);
         snprintf(line, sizeof line, "%s|%s", a, b);
         pl_kv(l, "renderer|tiler", line, NULL, NULL);
+        if (S.gpu_procs_valid && S.ntop_gpu) {
+            pl_gap(l, 4);
+            for (int i = 0; i < S.ntop_gpu; i++) {
+                snprintf(b, sizeof b, "%.1f%%", S.top_gpu[i].cpu * 100);
+                pl_proc(l, app_name(&S.top_gpu[i]), b, S.top_gpu[i].cpu, PC_PURPLE);
+            }
+        }
     }
     if (S.modules & (1u << M_MEM)) {
         SECTION();
@@ -908,6 +915,11 @@ static void panel_refresh(void) {
         S.procs_valid = procs_sample(2, S.top_cpu, &S.ntop_cpu, S.top_mem, &S.ntop_mem, 5);
         procs_step = S.step;
     }
+    static uint32_t gpu_procs_step;
+    if ((!S.gpu_procs_valid || S.step - gpu_procs_step >= 2) && (S.modules & (1u << M_GPU))) {
+        S.gpu_procs_valid = gpuprocs_sample(S.snap.gpu_ok ? S.snap.gpu_util : -1, S.top_gpu, &S.ntop_gpu, 5);
+        gpu_procs_step = S.step;
+    }
     prof_mark(3);
     build_panel_list(&gPL);
     prof_mark(4);
@@ -925,8 +937,9 @@ static void panel_close(void) {
     gItem.button.highlighted = NO;
     if (gGlobalMonitor) { [NSEvent removeMonitor:gGlobalMonitor]; gGlobalMonitor = nil; }
     procs_reset();
-    S.procs_valid = 0;
-    S.ntop_cpu = S.ntop_mem = 0;
+    gpuprocs_reset();
+    S.procs_valid = S.gpu_procs_valid = 0;
+    S.ntop_cpu = S.ntop_mem = S.ntop_gpu = 0;
     memset(gNames, 0, sizeof gNames);
     gLeanView->_static.contents = nil;  // let the layers drop their surfaces too
     gLeanView->_content.contents = nil;
@@ -1804,12 +1817,15 @@ static int cli(int argc, const char **argv) {
             for (int k = 0; k < s.nclusters; k++) printf("   %s %.0f%%", s.cluster_name[k], s.cluster_avg[k] * 100);
             printf("   cores %d\n", s.ncores);
         }
-        proc_row_t c[5], m[5];
-        int nc, nm;
+        proc_row_t c[5], m[5], g[5];
+        int nc, nm, ng;
         procs_sample(1, c, &nc, m, &nm, 5);
+        gpuprocs_sample(-1, g, &ng, 5);
         sleep(1);
         procs_sample(1, c, &nc, m, &nm, 5);
+        gpuprocs_sample(-1, g, &ng, 5);
         for (int i = 0; i < nc; i++) printf("top cpu %-20s %5.1f%%   top mem %-20s %6.0f MB\n", c[i].name, c[i].cpu * 100, m[i].name, m[i].memory / 1e6);
+        for (int i = 0; i < ng; i++) printf("top gpu %-20s %5.1f%%\n", g[i].name, g[i].cpu * 100);
         return 0;
     }
     return -1;

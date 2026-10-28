@@ -35,7 +35,7 @@ make -C .. && clang -O2 -o rumeter rumeter.c && clang -O2 -o session-state sessi
 
 From fastest to most thorough:
 
-1. **Microbenchmarks** (seconds, deterministic to well under 1%): `panelbench.c` (panel frames, with the compositor holding the shown surface), `chartbench.c` (menu bar strip with charts; `PNG=1` also checks it against a full render), `procbench.c`, `blitbench.c`.
+1. **Microbenchmarks** (seconds, deterministic to well under 1%): `panelbench.c` (panel frames, with the compositor holding the shown surface), `chartbench.c` (menu bar strip with charts; `PNG=1` also checks it against a full render), `procbench.c`, `gpuprocbench.c` (top GPU processes per 2 s refresh), `blitbench.c`.
 2. **Per-phase profile in the app** (about a minute): `make DEV=1 BUILD=build-dev`, then run the binary with `LITE_PROFILE=1`.
 3. **`quick-ab.sh <appA> <appB> [rounds] [window] [four|panel|chart]`** (2 to 3 minutes): runs both builds at the same time and meters them over the same window, so machine activity affects both equally. A build compared with itself comes out within about ±6% per round, so it settles changes larger than about 5%.
 4. **`suite-ab.sh`** (about 17 minutes): sequential, interleaved runs. Use it as the final check before quoting a number.

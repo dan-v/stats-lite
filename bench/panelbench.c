@@ -89,6 +89,13 @@ static void build_new(plist_t *l, int t) {
     g->n = 120;
     for (int i = 0; i < 120; i++) g->v[0][i] = 0.05f;
     pl_kv(l, "renderer|tiler", "7%|2%", NULL, NULL);
+    pl_gap(l, 4);
+    const char *gnames[] = {"Safari", "WindowServer", "Xcode"};
+    for (int i = 0; i < 3; i++) {
+        float v = 4.0f / (i + 1) + 0.1f * ((t / 2) % 3);
+        snprintf(b, sizeof b, "%.1f%%", v);
+        pl_proc(l, gnames[i], b, v / 100, PC_PURPLE);
+    }
     pl_divider(l);
     pl_header(l, "Memory", "62%");
     pitem_t *m = pl_spark(l, PC_GREEN, 0);

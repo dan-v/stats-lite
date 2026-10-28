@@ -184,6 +184,119 @@ int fio_scan(const uint32_t *w, size_t n, const fio_key_t *keys, int nkeys, int6
     return found;
 }
 
+// Walks the whole stream tracking object indices, since a repeated key symbol is
+// serialized as a reference to its first occurrence.
+int fio_scan_sum(const uint32_t *w, size_t n, fio_key_t key, int64_t *sum) {
+    if (n < 2 || w[0] != 0x000000d3u) return -1;
+    struct { uint8_t dict, end; uint32_t items; } st[32];
+    int depth = 0, found = 0, want = 0;
+    uint32_t idx = 0, key_idx = UINT32_MAX;
+    size_t i = 1;
+    *sum = 0;
+    do {
+        if (i >= n) return -1;
+        uint32_t h = w[i++];
+        uint32_t type = (h >> 24) & 0x7f, len = h & 0xffffff, end = h >> 31;
+        int is_key = depth > 0 && st[depth - 1].dict && st[depth - 1].items % 2 == 0;
+        if (depth > 0) st[depth - 1].items++;
+        else end = 1;  // the root closes the stream
+        int opens = 0;
+        switch (type) {
+        case kNumber:
+            if (i + 2 > n) return -1;
+            if (want) {
+                *sum += (int64_t)((uint64_t)w[i] | (uint64_t)w[i + 1] << 32);
+                found++;
+            }
+            i += 2;
+            idx++;
+            break;
+        case kSymbol: case kString: case kData: {
+            size_t words = (len + 3) / 4;
+            if (i + words > n) return -1;
+            if (is_key) {
+                want = type == kSymbol && len == key.len + 1 && memcmp(&w[i], key.name, key.len) == 0;
+                if (want && key_idx == UINT32_MAX) key_idx = idx;
+            }
+            i += words;
+            idx++;
+            break;
+        }
+        case kBool: idx++; break;
+        case kObject:
+            if (is_key) want = len == key_idx;
+            else if (want) return -1;  // shared value: let CF resolve it
+            break;
+        case kDict: case kArray: case kSet:
+            idx++;
+            if (len) {
+                if (depth >= (int)(sizeof st / sizeof st[0])) return -1;
+                st[depth].dict = type == kDict;
+                st[depth].end = (uint8_t)end;
+                st[depth++].items = 0;
+                opens = 1;
+            }
+            break;
+        default: return -1;
+        }
+        if (!is_key) want = 0;
+        if (!opens && end)
+            while (depth > 0 && st[--depth].end) {}
+    } while (depth > 0);
+    return found;
+}
+
+static int cf_sum(CFTypeRef v, CFStringRef key, int64_t *sum) {
+    int found = 0;
+    CFTypeID t = CFGetTypeID(v);
+    if (t == CFDictionaryGetTypeID()) {
+        CFIndex c = CFDictionaryGetCount(v);
+        const void *ks[64], *vs[64];
+        if (c > 64) return 0;
+        CFDictionaryGetKeysAndValues(v, ks, vs);
+        for (CFIndex k = 0; k < c; k++) {
+            int64_t x;
+            if (CFEqual(ks[k], key) && CFGetTypeID(vs[k]) == CFNumberGetTypeID() && CFNumberGetValue(vs[k], kCFNumberSInt64Type, &x)) {
+                *sum += x;
+                found++;
+            } else {
+                found += cf_sum(vs[k], key, sum);
+            }
+        }
+    } else if (t == CFArrayGetTypeID()) {
+        for (CFIndex k = 0; k < CFArrayGetCount(v); k++) found += cf_sum(CFArrayGetValueAtIndex(v, k), key, sum);
+    }
+    return found;
+}
+
+int fio_sum_key(io_registry_entry_t entry, const char *prop, fio_key_t key, int64_t *sum) {
+    if (!entry) return -1;
+    if (g_fast_ok) {
+        size_t nbytes = 0;
+        vm_offset_t ool = 0;
+        mach_msg_type_number_t oolcnt = 0;
+        const uint32_t *data = get_bin(entry, prop, &nbytes, &ool, &oolcnt);
+        if (data) {
+            int r = fio_scan_sum(data, nbytes / 4, key, sum);
+            if (oolcnt) vm_deallocate(mach_task_self(), ool, oolcnt);
+            if (r >= 0) return r;
+            g_fast_ok = 0;
+        } else if (g_fast_ok) {
+            return -1;
+        }
+    }
+    CFStringRef p = CFStringCreateWithCString(NULL, prop, kCFStringEncodingUTF8);
+    CFTypeRef v = IORegistryEntryCreateCFProperty(entry, p, kCFAllocatorDefault, 0);
+    CFRelease(p);
+    if (!v) return -1;
+    CFStringRef k = CFStringCreateWithCString(NULL, key.name, kCFStringEncodingUTF8);
+    *sum = 0;
+    int found = cf_sum(v, k, sum);
+    CFRelease(k);
+    CFRelease(v);
+    return found;
+}
+
 static int cf_read_numbers(io_registry_entry_t entry, const char *prop, const fio_key_t *keys, int nkeys, int64_t *out) {
     CFStringRef p = CFStringCreateWithCString(NULL, prop, kCFStringEncodingUTF8);
     CFTypeRef v = IORegistryEntryCreateCFProperty(entry, p, kCFAllocatorDefault, 0);

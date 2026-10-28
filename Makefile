@@ -6,7 +6,7 @@
 BUILD    ?= build
 APP      := $(BUILD)/StatsLite.app
 BIN      := $(APP)/Contents/MacOS/StatsLite
-CORE     := src/core/fastio.c src/core/sampler.c src/core/smc.c src/core/procs.c src/core/render.c src/core/history.c src/core/blit.c src/core/panel.c src/core/blit_arm64.S
+CORE     := src/core/fastio.c src/core/sampler.c src/core/smc.c src/core/procs.c src/core/gpuprocs.c src/core/render.c src/core/history.c src/core/blit.c src/core/panel.c src/core/blit_arm64.S
 APPSRC   := src/app/main.m
 ARCH     ?= arm64
 STRIP    ?= strip -x

@@ -17,7 +17,13 @@ typedef struct {
 // (left untouched when missing). Returns the number of keys found, -1 on error.
 int fio_read_numbers(io_registry_entry_t entry, const char *prop, const fio_key_t *keys, int nkeys, int64_t *out);
 
-// Scans an OSSerializeBinary stream. Exposed for tests.
+// Sums every number stored under `key` in any dictionary inside `prop`, at any depth
+// (e.g. accumulatedGPUTime across an array of dictionaries). Returns the number of
+// values summed, -1 on error.
+int fio_sum_key(io_registry_entry_t entry, const char *prop, fio_key_t key, int64_t *sum);
+
+// Scan OSSerializeBinary streams. Exposed for tests.
+int fio_scan_sum(const uint32_t *words, size_t nwords, fio_key_t key, int64_t *sum);
 int fio_scan(const uint32_t *words, size_t nwords, const fio_key_t *keys, int nkeys, int64_t *out);
 
 // 1 when the hand-rolled MIG path is active, 0 after falling back to CF.

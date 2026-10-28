@@ -32,3 +32,10 @@ void procs_set_busy_cores(float busy);
 // the process that used the most CPU since the previous call, with its average
 // fraction of one core in *share. Returns 0 on the first call (baseline only).
 int procs_top_since_last(char *name, size_t cap, float *share);
+
+// Top processes by GPU share, any user, from the GPU driver's per-client usage.
+// device_util (0..1, < 0 unknown) lets the tiered reads notice untracked load.
+// Rows use proc_row_t with .cpu holding the GPU share. Returns 1 when shares are valid.
+int gpuprocs_sample(float device_util, proc_row_t *rows, int *n, int max);
+void gpuprocs_reset(void);
+unsigned gpuprocs_last_reads(void);
